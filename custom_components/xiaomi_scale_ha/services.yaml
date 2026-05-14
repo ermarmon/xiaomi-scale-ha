@@ -1,0 +1,40 @@
+assign_pending:
+  name: Assign pending measurement
+  description: Assign the current pending scale measurement to a configured user.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional config entry ID. Required only when multiple scales are configured.
+      selector:
+        text:
+    user_name:
+      name: User name
+      description: Configured user name to assign the pending measurement to.
+      required: true
+      selector:
+        text:
+
+discard_pending:
+  name: Discard pending measurement
+  description: Discard the current pending scale measurement.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional config entry ID. Required only when multiple scales are configured.
+      selector:
+        text:
+    reason:
+      name: Reason
+      description: Optional reason stored in the discarded event.
+      selector:
+        text:
+
+send_pending_notification:
+  name: Send pending notification
+  description: Send the notification for the current pending measurement again.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional config entry ID. Required only when multiple scales are configured.
+      selector:
+        text:

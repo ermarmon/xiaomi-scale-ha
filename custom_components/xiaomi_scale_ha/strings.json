@@ -7,6 +7,24 @@
         "data": {
           "name": "Name",
           "mac": "Scale MAC address",
+          "notify_service": "Mobile notification service",
+          "persistent_notification": "Create persistent notification for pending measurements",
+          "notify_assigned": "Send mobile notification when a weight is registered",
+          "alexa_actions": "Use Alexa actionable notifications for pending measurements",
+          "alexa_action_script": "Alexa actionable notification script",
+          "alexa_suppress_confirmation": "Suppress Alexa OK confirmation",
+          "users": "Users JSON"
+        }
+      },
+      "init": {
+        "title": "Xiaomi Scale HA options",
+        "data": {
+          "notify_service": "Mobile notification service",
+          "persistent_notification": "Create persistent notification for pending measurements",
+          "notify_assigned": "Send mobile notification when a weight is registered",
+          "alexa_actions": "Use Alexa actionable notifications for pending measurements",
+          "alexa_action_script": "Alexa actionable notification script",
+          "alexa_suppress_confirmation": "Suppress Alexa OK confirmation",
           "users": "Users JSON"
         }
       }
@@ -16,6 +34,22 @@
     },
     "abort": {
       "already_configured": "This scale is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Xiaomi Scale HA options",
+        "data": {
+          "notify_service": "Mobile notification service",
+          "persistent_notification": "Create persistent notification for pending measurements",
+          "notify_assigned": "Send mobile notification when a weight is registered",
+          "alexa_actions": "Use Alexa actionable notifications for pending measurements",
+          "alexa_action_script": "Alexa actionable notification script",
+          "alexa_suppress_confirmation": "Suppress Alexa OK confirmation",
+          "users": "Users JSON"
+        }
+      }
     }
   }
 }

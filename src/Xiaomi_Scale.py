@@ -13,6 +13,7 @@ import os
 import time                                     # Fix 1: backoff sleep
 
 import Xiaomi_Scale_Body_Metrics
+from user_history import UserHistoryManager
 
 DEFAULT_DEBUG_LEVEL = "INFO"
 VERSION = "0.3.5"
@@ -81,22 +82,10 @@ def GetAge(d1):
     return abs((d2 - d1).days) / 365
 
 
-def MQTT_publish(weight, unit, mitdatetime, hasImpedance, miimpedance):
-    """Publishes weight data for the selected user"""
-    if unit == "lbs": calcweight = round(weight * 0.4536, 2)
-    if unit == "jin": calcweight = round(weight * 0.5, 2)
-    if unit == "kg": calcweight = weight
-    matcheduser = None
-    for user in USERS:
-        if(check_weight(user, weight)):
-            matcheduser = user
-            break
-    if matcheduser is None:
-        return
+def _build_payload(calcweight, weight, unit, mitdatetime, hasImpedance, miimpedance, matcheduser):
     height = matcheduser.HEIGHT
     age = GetAge(matcheduser.DOB)
     sex = matcheduser.SEX.lower()
-    name = matcheduser.NAME
 
     lib = Xiaomi_Scale_Body_Metrics.bodyMetrics(calcweight, height, age, sex, 0)
     message = '{'
@@ -121,14 +110,81 @@ def MQTT_publish(weight, unit, mitdatetime, hasImpedance, miimpedance):
 
     message += ',"timestamp":"' + mitdatetime + '"'
     message += '}'
+    return message
+
+
+def _publish_pending(weight, unit, mitdatetime, candidates, impedance_val):
+    """Publish ambiguous measurement and fire dual notifications. Script does NOT wait for response — HA automations handle assignment."""
+    import json as _json
+    pending = _json.dumps({
+        "weight": weight,
+        "unit": unit,
+        "timestamp": mitdatetime,
+        "candidates": candidates,
+        "impedance": impedance_val,
+    })
+    MQTT_CLIENT.publish("miscale/pending", pending, retain=False)
+    logging.info(f"Ambiguous measurement ({weight}{unit}), candidates={candidates} → miscale/pending")
+
+    if NOTIFY_ALEXA and ALEXA_MEDIA_TOPIC:
+        names = ", ".join(candidates)
+        alexa_msg = _json.dumps({
+            "type": "announce",
+            "message": f"Pesaje sin asignar: {weight} kilos. Candidatos: {names}. Confirma en el móvil.",
+        })
+        MQTT_CLIENT.publish(ALEXA_MEDIA_TOPIC, alexa_msg, retain=False)
+
+    if NOTIFY_MOBILE and MOBILE_NOTIFY_TOPIC:
+        actions = [{"action": f"ASSIGN_{n.upper()}", "title": f"Soy {n}"} for n in candidates]
+        actions.append({"action": "ASSIGN_DISCARD", "title": "Descartar"})
+        mobile_msg = _json.dumps({
+            "title": "Pesaje sin asignar",
+            "message": f"{weight}kg — ¿quién es?",
+            "data": {"actions": actions},
+        })
+        MQTT_CLIENT.publish(MOBILE_NOTIFY_TOPIC, mobile_msg, retain=False)
+
+
+def MQTT_publish(weight, unit, mitdatetime, hasImpedance, miimpedance):
+    """Publishes weight data — history-based matching first, GT/LT fallback, pending if ambiguous."""
+    if unit == "lbs": calcweight = round(weight * 0.4536, 2)
+    if unit == "jin": calcweight = round(weight * 0.5, 2)
+    if unit == "kg": calcweight = weight
+
+    impedance_val = float(miimpedance) if hasImpedance and miimpedance else None
+    users_as_dicts = [u._asdict() for u in USERS]
+    candidates = HISTORY_MANAGER.get_candidates(weight, users_as_dicts)
+
+    if len(candidates) == 1:
+        name = candidates[0]
+        matcheduser = next((u for u in USERS if u.NAME == name), None)
+        if matcheduser:
+            message = _build_payload(calcweight, weight, unit, mitdatetime, hasImpedance, miimpedance, matcheduser)
+            logging.info(f"Publishing data (history match) to topic {MQTT_PREFIX}/{name}/weight: {message}")
+            MQTT_CLIENT.publish(MQTT_PREFIX + '/' + name + '/weight', message, retain=MQTT_RETAIN)
+            HISTORY_MANAGER.add_measurement(name, weight, mitdatetime)
+            logging.info(f"Data Published ...")
+            return
+
+    if len(candidates) >= 2:
+        _publish_pending(weight, unit, mitdatetime, candidates, impedance_val)
+        return
+
+    # Fallback: original GT/LT matching (also bootstrap for users with <3 history entries)
+    matcheduser = None
+    for user in USERS:
+        if check_weight(user, weight):
+            matcheduser = user
+            break
+    if matcheduser is None:
+        logging.warning(f"No user matched for weight {weight}{unit}")
+        return
+    name = matcheduser.NAME
+    message = _build_payload(calcweight, weight, unit, mitdatetime, hasImpedance, miimpedance, matcheduser)
     try:
-        logging.info(f"Publishing data to topic {MQTT_PREFIX + '/' + name + '/weight'}: {message}")
-        # Fix 1: use persistent client instead of publish.single()
-        MQTT_CLIENT.publish(
-            MQTT_PREFIX + '/' + name + '/weight',
-            message,
-            retain=MQTT_RETAIN,
-        )
+        logging.info(f"Publishing data (GT/LT fallback) to topic {MQTT_PREFIX}/{name}/weight: {message}")
+        MQTT_CLIENT.publish(MQTT_PREFIX + '/' + name + '/weight', message, retain=MQTT_RETAIN)
+        HISTORY_MANAGER.add_measurement(name, weight, mitdatetime)
         logging.info(f"Data Published ...")
     except Exception as error:
         logging.error(f"Could not publish to MQTT: {error}")
@@ -313,6 +369,8 @@ except FileNotFoundError as error:
 
 # Fix 1: create persistent MQTT client once, after config is loaded
 MQTT_CLIENT = create_mqtt_client()
+# FASE 2: persistent history manager
+HISTORY_MANAGER = UserHistoryManager()
 
 
 async def main(MISCALE_MAC):

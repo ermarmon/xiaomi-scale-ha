@@ -1,5 +1,5 @@
 name: "Xiaomi Mi Scale (modernized)"
-version: "0.4.1"
+version: "0.4.2"
 slug: xiaomi_mi_scale
 description: "BLE reader for Xiaomi Mi Scale with adaptive multi-user support and dual actionable notifications"
 url: "https://github.com/lolouk44/xiaomi_mi_scale"

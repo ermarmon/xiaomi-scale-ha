@@ -1,6 +1,6 @@
 #!/usr/bin/env bashio
 
-bashio::log.info "Starting Xiaomi Mi Scale add-on v0.4.1..."
+bashio::log.info "Starting Xiaomi Mi Scale add-on v0.4.2..."
 
 # Map HA options to /data/options.json which Xiaomi_Scale.py reads directly.
 # The HA Supervisor writes all configured options to /data/options.json automatically.

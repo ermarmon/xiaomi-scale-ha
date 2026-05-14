@@ -16,7 +16,7 @@ import Xiaomi_Scale_Body_Metrics
 from user_history import UserHistoryManager
 
 DEFAULT_DEBUG_LEVEL = "INFO"
-VERSION = "0.3.5"
+VERSION = "0.4.2"
 
 
 def customUserDecoder(userDict):
@@ -375,17 +375,24 @@ HISTORY_MANAGER = UserHistoryManager()
 
 async def main(MISCALE_MAC):
     stop_event = asyncio.Event()
+    miscale_v2_uuid = '0000181b-0000-1000-8000-00805f9b34fb'
+    miscale_v1_uuid = '0000181d-0000-1000-8000-00805f9b34fb'
 
     # Fix 3: detection_callback as keyword argument (bleak>=0.21)
     def callback(device, advertising_data):
         global OLD_MEASURE
-        if device.address.lower() == MISCALE_MAC:
-            logging.debug(f"miscale found, with advertising_data: {advertising_data}")
+        device_address = device.address.lower()
+        service_data = {
+            key.lower(): value for key, value in advertising_data.service_data.items()
+        }
+        if device_address == MISCALE_MAC:
+            logging.info(f"Configured scale advertisement received from {device.address}")
+            logging.debug(f"miscale advertising_data: {advertising_data}")
             try:
                 ### Xiaomi V2 Scale ###
                 # Fix 3: lowercase UUID key for bleak>=0.21 compatibility
-                data = binascii.b2a_hex(advertising_data.service_data['0000181b-0000-1000-8000-00805f9b34fb']).decode('ascii')
-                logging.debug(f"miscale v2 found (service data: 0000181b-0000-1000-8000-00805f9b34fb)")
+                data = binascii.b2a_hex(service_data[miscale_v2_uuid]).decode('ascii')
+                logging.debug(f"miscale v2 found (service data: {miscale_v2_uuid})")
                 data = "1b18" + data
                 data2 = bytes.fromhex(data[4:])
                 ctrlByte1 = data2[1]
@@ -403,12 +410,16 @@ async def main(MISCALE_MAC):
                         # Fix 2: timezone-aware UTC timestamp
                         mitdatetime = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
                         MQTT_publish(round(measured, 2), unit, mitdatetime, hasImpedance, miimpedance)
-            except:
-                pass
+                elif unit:
+                    logging.info(f"Scale reading seen but not stabilized yet: {round(measured, 2)} {unit}")
+            except KeyError:
+                logging.debug("No Xiaomi V2 service data in this advertisement")
+            except Exception as error:
+                logging.warning(f"Could not parse Xiaomi V2 advertisement: {error}")
             try:
                 ### Xiaomi V1 Scale ###
-                data = binascii.b2a_hex(advertising_data.service_data['0000181d-0000-1000-8000-00805f9b34fb']).decode('ascii')
-                logging.debug(f"miscale v1 found (service data: 0000181d-0000-1000-8000-00805f9b34fb)")
+                data = binascii.b2a_hex(service_data[miscale_v1_uuid]).decode('ascii')
+                logging.debug(f"miscale v1 found (service data: {miscale_v1_uuid})")
                 data = "1d18" + data
                 measunit = data[4:6]
                 measured = int((data[8:10] + data[6:8]), 16) * 0.01
@@ -422,14 +433,18 @@ async def main(MISCALE_MAC):
                         # Fix 2: timezone-aware UTC timestamp
                         mitdatetime = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S+00:00')
                         MQTT_publish(round(measured, 2), unit, mitdatetime, "", "")
-            except:
-                pass
-        pass
+            except KeyError:
+                logging.debug("No Xiaomi V1 service data in this advertisement")
+            except Exception as error:
+                logging.warning(f"Could not parse Xiaomi V1 advertisement: {error}")
+        elif miscale_v1_uuid in service_data or miscale_v2_uuid in service_data:
+            logging.debug(f"Ignoring Xiaomi scale advertisement from {device.address}; configured MAC is {MISCALE_MAC}")
 
     # Fix 3: detection_callback keyword argument (bleak>=0.21)
+    logging.info(f"Starting BLE scan on adapter {HCI_DEV} for scale {MISCALE_MAC}")
     async with BleakScanner(
         detection_callback=callback,
-        device=f"{HCI_DEV}"
+        bluez={"adapter": f"{HCI_DEV}"}
     ) as scanner:
         await stop_event.wait()
 

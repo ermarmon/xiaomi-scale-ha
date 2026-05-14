@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.2] - 2026-05-14
+
+### Fixed
+- Scanner BLE actualizado para bleak/BlueZ moderno usando `bluez={"adapter": HCI_DEV}`
+  en vez de `device=HCI_DEV`.
+- Mejorados los logs de diagnostico cuando se reciben anuncios BLE de la bascula:
+  MAC configurada detectada, lectura no estabilizada y errores de parsing.
+
 ## [0.4.1] - 2026-05-14
 
 ### Fixed

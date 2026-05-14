@@ -1,0 +1,21 @@
+{
+  "domain": "xiaomi_scale_ha",
+  "name": "Xiaomi Scale HA",
+  "after_dependencies": ["bluetooth_adapters"],
+  "bluetooth": [
+    {
+      "service_uuid": "0000181b-0000-1000-8000-00805f9b34fb",
+      "connectable": false
+    },
+    {
+      "service_uuid": "0000181d-0000-1000-8000-00805f9b34fb",
+      "connectable": false
+    }
+  ],
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": ["bluetooth", "bluetooth_adapters"],
+  "documentation": "https://github.com/lolouk44/xiaomi_mi_scale",
+  "iot_class": "local_push",
+  "version": "0.1.0"
+}

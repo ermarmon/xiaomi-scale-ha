@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Xiaomi Scale HA",
+        "description": "Configure the scale MAC address and user matching ranges.",
+        "data": {
+          "name": "Name",
+          "mac": "Scale MAC address",
+          "users": "Users JSON"
+        }
+      }
+    },
+    "error": {
+      "invalid_users": "Users JSON is invalid. Check required fields NAME, GT, LT, SEX, HEIGHT and DOB."
+    },
+    "abort": {
+      "already_configured": "This scale is already configured."
+    }
+  }
+}

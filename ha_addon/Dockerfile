@@ -1,4 +1,13 @@
-FROM ghcr.io/home-assistant/amd64-base:latest
+ARG BUILD_ARCH=amd64
+ARG BUILD_VERSION=0.4.2
+FROM ghcr.io/home-assistant/${BUILD_ARCH}-base:latest
+
+ARG BUILD_ARCH
+ARG BUILD_VERSION
+LABEL \
+    io.hass.version="${BUILD_VERSION}" \
+    io.hass.type="app" \
+    io.hass.arch="${BUILD_ARCH}"
 
 RUN apk add --no-cache \
     python3 \

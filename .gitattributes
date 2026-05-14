@@ -1,0 +1,10 @@
+ha_addon/*.sh text eol=lf
+ha_addon/Dockerfile text eol=lf
+ha_addon/*.yaml text eol=lf
+ha_addon/*.md text eol=lf
+ha_addon/src/*.py text eol=lf
+src/*.py text eol=lf
+custom_components/xiaomi_scale_ha/*.py text eol=lf
+custom_components/xiaomi_scale_ha/*.json text eol=lf
+custom_components/xiaomi_scale_ha/*.md text eol=lf
+repository.yaml text eol=lf

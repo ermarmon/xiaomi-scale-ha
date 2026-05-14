@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.4.1] - 2026-05-14
+
+### Fixed
+- Packaging del add-on autocontenido: `ha_addon/` incluye `src/` y `requirements.txt`.
+- Compatibilidad con Supervisor/Home Assistant 2026.04+: base image declarada en `Dockerfile`
+  y build sin depender de `build_from`.
+- Dockerfile migrado a paquetes Alpine (`apk`) para las imagenes base de Home Assistant.
+- Permisos de Bluetooth/D-Bus declarados en `config.yaml` (`host_dbus`, `usb`,
+  `NET_ADMIN`, `NET_RAW`).
+
 ## [0.4.0] — 2026-05-14
 
 ### Fixed

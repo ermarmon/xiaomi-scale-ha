@@ -1,6 +1,8 @@
-FROM python:3.11-alpine
+FROM ghcr.io/home-assistant/amd64-base:latest
 
 RUN apk add --no-cache \
+    python3 \
+    py3-pip \
     gcc \
     musl-dev \
     glib-dev \

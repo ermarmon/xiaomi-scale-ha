@@ -1,4 +1,4 @@
-ARG BUILD_FROM
+ARG BUILD_FROM=ghcr.io/home-assistant/amd64-base-python:3.11
 FROM $BUILD_FROM
 
 RUN apt-get update && apt-get install --no-install-recommends -y \

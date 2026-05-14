@@ -14,6 +14,7 @@ from .const import (
     CONF_ALEXA_ACTIONS,
     CONF_ALEXA_ACTION_SCRIPT,
     CONF_ALEXA_SUPPRESS_CONFIRMATION,
+    CONF_IMPEDANCE_WAIT_SECONDS,
     CONF_MAC,
     CONF_NOTIFY_ASSIGNED,
     CONF_NOTIFY_SERVICE,
@@ -74,6 +75,7 @@ class XiaomiScaleHaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_NOTIFY_SERVICE: user_input.get(CONF_NOTIFY_SERVICE, "").strip(),
                         CONF_PERSISTENT_NOTIFICATION: user_input.get(CONF_PERSISTENT_NOTIFICATION, True),
                         CONF_NOTIFY_ASSIGNED: user_input.get(CONF_NOTIFY_ASSIGNED, False),
+                        CONF_IMPEDANCE_WAIT_SECONDS: user_input.get(CONF_IMPEDANCE_WAIT_SECONDS, 8),
                         CONF_ALEXA_ACTIONS: user_input.get(CONF_ALEXA_ACTIONS, False),
                         CONF_ALEXA_ACTION_SCRIPT: user_input.get(
                             CONF_ALEXA_ACTION_SCRIPT,
@@ -93,6 +95,10 @@ class XiaomiScaleHaConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Optional(CONF_NOTIFY_SERVICE, default=""): str,
                 vol.Optional(CONF_PERSISTENT_NOTIFICATION, default=True): bool,
                 vol.Optional(CONF_NOTIFY_ASSIGNED, default=False): bool,
+                vol.Optional(CONF_IMPEDANCE_WAIT_SECONDS, default=8): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(min=0, max=60),
+                ),
                 vol.Optional(CONF_ALEXA_ACTIONS, default=False): bool,
                 vol.Optional(
                     CONF_ALEXA_ACTION_SCRIPT,
@@ -127,6 +133,7 @@ class XiaomiScaleHaOptionsFlow(config_entries.OptionsFlow):
                         CONF_NOTIFY_SERVICE: user_input.get(CONF_NOTIFY_SERVICE, "").strip(),
                         CONF_PERSISTENT_NOTIFICATION: user_input.get(CONF_PERSISTENT_NOTIFICATION, True),
                         CONF_NOTIFY_ASSIGNED: user_input.get(CONF_NOTIFY_ASSIGNED, False),
+                        CONF_IMPEDANCE_WAIT_SECONDS: user_input.get(CONF_IMPEDANCE_WAIT_SECONDS, 8),
                         CONF_ALEXA_ACTIONS: user_input.get(CONF_ALEXA_ACTIONS, False),
                         CONF_ALEXA_ACTION_SCRIPT: user_input.get(
                             CONF_ALEXA_ACTION_SCRIPT,
@@ -156,6 +163,10 @@ class XiaomiScaleHaOptionsFlow(config_entries.OptionsFlow):
                     CONF_NOTIFY_ASSIGNED,
                     default=options.get(CONF_NOTIFY_ASSIGNED, False),
                 ): bool,
+                vol.Optional(
+                    CONF_IMPEDANCE_WAIT_SECONDS,
+                    default=options.get(CONF_IMPEDANCE_WAIT_SECONDS, 8),
+                ): vol.All(vol.Coerce(int), vol.Range(min=0, max=60)),
                 vol.Optional(
                     CONF_ALEXA_ACTIONS,
                     default=options.get(CONF_ALEXA_ACTIONS, False),

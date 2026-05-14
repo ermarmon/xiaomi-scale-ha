@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from time import monotonic
 from typing import Any
@@ -17,6 +18,7 @@ from .const import (
     CONF_ALEXA_ACTIONS,
     CONF_ALEXA_ACTION_SCRIPT,
     CONF_ALEXA_SUPPRESS_CONFIRMATION,
+    CONF_IMPEDANCE_WAIT_SECONDS,
     CONF_MAC,
     CONF_NOTIFY_ASSIGNED,
     CONF_NOTIFY_SERVICE,
@@ -64,7 +66,9 @@ class XiaomiScaleRuntime:
         self.pending: dict[str, Any] | None = None
         self._action_to_user: dict[str, str | None] = {}
         self._alexa_event_to_user: dict[str, str] = {}
-        self._last_signature: tuple[tuple[float, int | None], float] | None = None
+        self._last_signature: tuple[float, int | None] | None = None
+        self._last_signature_time: float = 0
+        self._pending_finalize: dict[str, asyncio.Task] = {}
 
     async def async_setup(self) -> None:
         await self.history.async_load()
@@ -72,9 +76,10 @@ class XiaomiScaleRuntime:
     async def async_handle_measurement(self, measurement: ScaleMeasurement) -> None:
         signature = (measurement.weight, measurement.impedance)
         now = monotonic()
-        if self._last_signature and signature == self._last_signature[0] and now - self._last_signature[1] < 30:
+        if self._last_signature == signature and now - self._last_signature_time < 30:
             return
-        self._last_signature = (signature, now)
+        self._last_signature = signature
+        self._last_signature_time = now
 
         candidates = self.history.candidates(measurement.weight, self.users)
         payload = {
@@ -87,7 +92,7 @@ class XiaomiScaleRuntime:
         }
         if len(candidates) == 1:
             user_name = candidates[0]
-            await self.async_assign_payload(payload, user_name)
+            await self.async_assign_payload(payload, user_name, finalize=False)
             return
 
         if len(candidates) > 1:
@@ -108,21 +113,66 @@ class XiaomiScaleRuntime:
         if self.pending is None:
             return False
         payload = dict(self.pending)
-        await self.async_assign_payload(payload, user_name)
+        await self.async_assign_payload(payload, user_name, finalize=True)
         return True
 
-    async def async_assign_payload(self, payload: dict[str, Any], user_name: str) -> None:
+    async def async_assign_payload(self, payload: dict[str, Any], user_name: str, finalize: bool) -> None:
         user = next((item for item in self.users if item["NAME"] == user_name), None)
         if user is None:
             raise HomeAssistantError(f"Unknown user: {user_name}")
 
         payload.update(_build_metrics(payload, user))
+        existing = self.latest_by_user.get(user_name)
+        if existing and _same_weight_session(existing, payload):
+            if existing.get("_finalized"):
+                payload["_finalized"] = True
+            payload = {**existing, **payload}
         self.latest_by_user[user_name] = payload
         self.pending = None
         self._action_to_user = {}
         self._alexa_event_to_user = {}
-        await self.history.async_add_measurement(user_name, float(payload["weight"]), payload["timestamp"])
         await self._dismiss_pending_notification()
+        if finalize:
+            await self._finalize_assigned_measurement(user, payload)
+        else:
+            self._schedule_assigned_finalize(user, payload)
+        async_dispatcher_send(self.hass, SIGNAL_MEASUREMENT, self.entry.entry_id)
+
+    def _schedule_assigned_finalize(self, user: dict[str, Any], payload: dict[str, Any]) -> None:
+        user_name = user["NAME"]
+        task = self._pending_finalize.pop(user_name, None)
+        if task is not None:
+            task.cancel()
+
+        wait_seconds = self.entry.options.get(CONF_IMPEDANCE_WAIT_SECONDS, 8)
+        if payload.get("impedance") is not None or wait_seconds <= 0:
+            self.hass.async_create_task(self._finalize_assigned_measurement(user, payload))
+            return
+
+        self._pending_finalize[user_name] = self.hass.async_create_task(
+            self._delayed_finalize_assigned_measurement(user, wait_seconds)
+        )
+
+    async def _delayed_finalize_assigned_measurement(self, user: dict[str, Any], wait_seconds: int) -> None:
+        user_name = user["NAME"]
+        try:
+            await asyncio.sleep(wait_seconds)
+            payload = self.latest_by_user.get(user_name)
+            if payload is not None:
+                await self._finalize_assigned_measurement(user, payload)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if self._pending_finalize.get(user_name) is asyncio.current_task():
+                self._pending_finalize.pop(user_name, None)
+
+    async def _finalize_assigned_measurement(self, user: dict[str, Any], payload: dict[str, Any]) -> None:
+        user_name = user["NAME"]
+        if payload.get("_finalized"):
+            async_dispatcher_send(self.hass, SIGNAL_MEASUREMENT, self.entry.entry_id)
+            return
+        payload["_finalized"] = True
+        await self.history.async_add_measurement(user_name, float(payload["weight"]), payload["timestamp"])
         await self._send_assigned_notification(user, payload)
         self.hass.bus.async_fire(
             EVENT_ASSIGNED,
@@ -141,6 +191,9 @@ class XiaomiScaleRuntime:
         self.pending = None
         self._action_to_user = {}
         self._alexa_event_to_user = {}
+        for task in self._pending_finalize.values():
+            task.cancel()
+        self._pending_finalize.clear()
         await self._dismiss_pending_notification()
         self.hass.bus.async_fire(
             EVENT_DISCARDED,
@@ -375,6 +428,18 @@ def _slug(value: str) -> str:
     return "".join(char.lower() if char.isalnum() else "_" for char in value).strip("_")
 
 
+def _same_weight_session(previous: dict[str, Any], current: dict[str, Any]) -> bool:
+    previous_weight = previous.get("weight")
+    current_weight = current.get("weight")
+    previous_unit = previous.get("unit")
+    current_unit = current.get("unit")
+    if not isinstance(previous_weight, (int, float)) or not isinstance(current_weight, (int, float)):
+        return False
+    if previous_unit != current_unit:
+        return False
+    return abs(float(previous_weight) - float(current_weight)) <= 0.2
+
+
 def _build_metrics(payload: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
     weight = float(payload["weight"])
     if payload["unit"] == "lbs":
@@ -552,5 +617,9 @@ async def _async_options_updated(hass: HomeAssistant, entry: ConfigEntry) -> Non
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
-        hass.data[DOMAIN].pop(entry.entry_id, None)
+        runtime = hass.data[DOMAIN].pop(entry.entry_id, None)
+        if runtime is not None:
+            for task in runtime._pending_finalize.values():
+                task.cancel()
+            runtime._pending_finalize.clear()
     return unload_ok

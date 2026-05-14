@@ -26,6 +26,7 @@ The setup flow asks for:
 - Optional mobile notification service, for example `notify.mobile_app_your_phone`.
 - Whether to create Home Assistant persistent notifications for pending measurements.
 - Whether to send a mobile notification when a weight is registered.
+- Seconds to wait for impedance before sending the registered-weight notification.
 - Users JSON.
 
 Example users JSON:
@@ -83,6 +84,13 @@ When a stabilized measurement arrives:
 
 For users with fewer than three measurements, matching uses the configured `GT` and
 `LT` range. After that, it compares the new weight with the user's recent history.
+
+The scale often sends a stable weight first and then sends another advertisement
+with impedance a few seconds later. The integration updates the sensor as soon as
+the weight arrives, but delays the registered-weight notification for
+`impedance_wait_seconds` so it can include impedance-based metrics when available.
+If the user steps off before impedance is measured, the weight-only notification
+is still sent after the wait window.
 
 ## Notifications
 

@@ -4,7 +4,7 @@ from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, UnitOfMass
+from homeassistant.const import CONF_NAME, EntityCategory, UnitOfMass
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -19,6 +19,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         XiaomiScaleWeightSensor(runtime, user["NAME"]) for user in runtime.users
     ]
     entities.append(XiaomiScalePendingSensor(runtime))
+    entities.append(XiaomiScaleDiagnosticSensor(runtime))
+    entities.append(XiaomiScaleHistorySensor(runtime))
     async_add_entities(entities)
 
 
@@ -94,3 +96,37 @@ class XiaomiScalePendingSensor(XiaomiScaleBaseSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.runtime.pending or {}
+
+
+class XiaomiScaleDiagnosticSensor(XiaomiScaleBaseSensor):
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, runtime) -> None:
+        super().__init__(runtime)
+        self._attr_name = "last BLE measurement"
+        self._attr_unique_id = f"{runtime.entry.entry_id}_last_ble_measurement"
+
+    @property
+    def native_value(self) -> str | None:
+        return self.runtime.last_diagnostic.get("state")
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.runtime.last_diagnostic
+
+
+class XiaomiScaleHistorySensor(XiaomiScaleBaseSensor):
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, runtime) -> None:
+        super().__init__(runtime)
+        self._attr_name = "history"
+        self._attr_unique_id = f"{runtime.entry.entry_id}_history"
+
+    @property
+    def native_value(self) -> int:
+        return sum(len(measurements) for measurements in self.runtime.history.data.values())
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self.runtime.history.summary()

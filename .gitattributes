@@ -8,4 +8,5 @@ custom_components/xiaomi_scale_ha/*.py text eol=lf
 custom_components/xiaomi_scale_ha/*.json text eol=lf
 custom_components/xiaomi_scale_ha/*.yaml text eol=lf
 custom_components/xiaomi_scale_ha/*.md text eol=lf
+custom_components/xiaomi_scale_ha/brand/*.png binary
 repository.yaml text eol=lf

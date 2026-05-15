@@ -18,6 +18,9 @@ Restart Home Assistant, then add the integration from:
 Settings > Devices & services > Add integration > Xiaomi Scale HA
 ```
 
+Home Assistant 2026.3+ loads the integration icon and logo from the local
+`brand/` directory.
+
 ## Configuration
 
 The setup flow asks for:
@@ -125,8 +128,44 @@ The integration registers these actions:
 - `xiaomi_scale_ha.assign_pending`
 - `xiaomi_scale_ha.discard_pending`
 - `xiaomi_scale_ha.send_pending_notification`
+- `xiaomi_scale_ha.clear_history`
+- `xiaomi_scale_ha.delete_history_measurement`
 
 `entry_id` is optional when only one scale is configured.
+
+### History maintenance
+
+The diagnostic `history` entity shows the stored recent measurements per user.
+The last stored measurement is restored on integration startup so user weight
+sensors do not become unknown just because Home Assistant restarted.
+
+The diagnostic `last BLE measurement` entity starts as `listening` after the
+Bluetooth callbacks are registered. If it stays there, the integration is loaded
+but has not received a matching advertisement from the configured scale yet.
+
+Clear one user's history:
+
+```yaml
+action: xiaomi_scale_ha.clear_history
+data:
+  user_name: Ernes
+```
+
+Clear all history:
+
+```yaml
+action: xiaomi_scale_ha.clear_history
+data: {}
+```
+
+Delete the latest stored measurement for one user:
+
+```yaml
+action: xiaomi_scale_ha.delete_history_measurement
+data:
+  user_name: Ernes
+  index: -1
+```
 
 ## Events
 

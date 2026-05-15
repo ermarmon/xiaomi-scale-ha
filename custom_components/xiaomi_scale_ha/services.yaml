@@ -38,3 +38,43 @@ send_pending_notification:
       description: Optional config entry ID. Required only when multiple scales are configured.
       selector:
         text:
+
+clear_history:
+  name: Clear history
+  description: Clear all stored history, or only one configured user's history.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional config entry ID. Required only when multiple scales are configured.
+      selector:
+        text:
+    user_name:
+      name: User name
+      description: Optional configured user name. Leave empty to clear all users.
+      selector:
+        text:
+
+delete_history_measurement:
+  name: Delete history measurement
+  description: Delete one stored measurement for a configured user by index.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional config entry ID. Required only when multiple scales are configured.
+      selector:
+        text:
+    user_name:
+      name: User name
+      description: Configured user name.
+      required: true
+      selector:
+        text:
+    index:
+      name: Index
+      description: Measurement index to delete. Use -1 for the latest measurement.
+      required: true
+      selector:
+        number:
+          min: -10
+          max: 9
+          mode: box

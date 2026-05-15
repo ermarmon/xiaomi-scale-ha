@@ -31,6 +31,8 @@ from .const import (
     EVENT_DISCARDED,
     EVENT_PENDING,
     SERVICE_ASSIGN_PENDING,
+    SERVICE_CLEAR_HISTORY,
+    SERVICE_DELETE_HISTORY_MEASUREMENT,
     SERVICE_DISCARD_PENDING,
     SERVICE_SEND_PENDING_NOTIFICATION,
     SIGNAL_MEASUREMENT,
@@ -44,6 +46,7 @@ _LOGGER = logging.getLogger(__name__)
 ATTR_ENTRY_ID = "entry_id"
 ATTR_USER_NAME = "user_name"
 ATTR_REASON = "reason"
+ATTR_INDEX = "index"
 
 ASSIGN_SCHEMA = vol.Schema(
     {
@@ -52,6 +55,19 @@ ASSIGN_SCHEMA = vol.Schema(
     }
 )
 OPTIONAL_ENTRY_SCHEMA = vol.Schema({vol.Optional(ATTR_ENTRY_ID): str})
+CLEAR_HISTORY_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): str,
+        vol.Optional(ATTR_USER_NAME): str,
+    }
+)
+DELETE_HISTORY_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): str,
+        vol.Required(ATTR_USER_NAME): str,
+        vol.Required(ATTR_INDEX): vol.Coerce(int),
+    }
+)
 
 
 class XiaomiScaleRuntime:
@@ -64,6 +80,7 @@ class XiaomiScaleRuntime:
         self.history = UserHistory(hass, f"{DOMAIN}_{entry.entry_id}_history")
         self.latest_by_user: dict[str, dict[str, Any]] = {}
         self.pending: dict[str, Any] | None = None
+        self.last_diagnostic: dict[str, Any] = {"state": "starting"}
         self._action_to_user: dict[str, str | None] = {}
         self._alexa_event_to_user: dict[str, str] = {}
         self._last_signature: tuple[float, int | None] | None = None
@@ -72,6 +89,33 @@ class XiaomiScaleRuntime:
 
     async def async_setup(self) -> None:
         await self.history.async_load()
+        self._restore_latest_measurements()
+
+    def _restore_latest_measurements(self) -> None:
+        for user in self.users:
+            user_name = user.get("NAME")
+            if not isinstance(user_name, str):
+                continue
+            latest = self.history.latest_measurement(user_name)
+            if latest is not None:
+                self.latest_by_user[user_name] = latest
+
+    async def async_clear_history(self, user_name: str | None = None) -> None:
+        await self.history.async_clear(user_name)
+        self.last_diagnostic = {
+            "state": "history_cleared",
+            "user_name": user_name,
+        }
+        async_dispatcher_send(self.hass, SIGNAL_MEASUREMENT, self.entry.entry_id)
+
+    async def async_delete_history_measurement(self, user_name: str, index: int) -> None:
+        await self.history.async_delete_measurement(user_name, index)
+        self.last_diagnostic = {
+            "state": "history_measurement_deleted",
+            "user_name": user_name,
+            "index": index,
+        }
+        async_dispatcher_send(self.hass, SIGNAL_MEASUREMENT, self.entry.entry_id)
 
     async def async_handle_measurement(self, measurement: ScaleMeasurement) -> None:
         signature = (measurement.weight, measurement.impedance)
@@ -87,18 +131,34 @@ class XiaomiScaleRuntime:
             "unit": measurement.unit,
             "timestamp": measurement.timestamp,
             "impedance": measurement.impedance,
+            "has_impedance": measurement.impedance is not None,
+            "source_address": measurement.source_address,
+            "rssi": measurement.rssi,
+        }
+        self.last_diagnostic = {
+            "state": "measurement_received",
+            "timestamp": measurement.timestamp,
+            "weight": measurement.weight,
+            "unit": measurement.unit,
+            "impedance": measurement.impedance,
+            "candidates": candidates,
             "source_address": measurement.source_address,
             "rssi": measurement.rssi,
         }
         if len(candidates) == 1:
             user_name = candidates[0]
+            self.last_diagnostic["state"] = "assigned"
+            self.last_diagnostic["user_name"] = user_name
             await self.async_assign_payload(payload, user_name, finalize=False)
             return
 
         if len(candidates) > 1:
+            self.last_diagnostic["state"] = "pending"
             await self.async_set_pending({**payload, "candidates": candidates})
             return
 
+        self.last_diagnostic["state"] = "no_user_matched"
+        async_dispatcher_send(self.hass, SIGNAL_MEASUREMENT, self.entry.entry_id)
         _LOGGER.info("No configured user matched %.2f %s", measurement.weight, measurement.unit)
 
     async def async_set_pending(self, payload: dict[str, Any]) -> None:
@@ -172,7 +232,12 @@ class XiaomiScaleRuntime:
             async_dispatcher_send(self.hass, SIGNAL_MEASUREMENT, self.entry.entry_id)
             return
         payload["_finalized"] = True
-        await self.history.async_add_measurement(user_name, float(payload["weight"]), payload["timestamp"])
+        await self.history.async_add_measurement(
+            user_name,
+            float(payload["weight"]),
+            payload["timestamp"],
+            payload,
+        )
         await self._send_assigned_notification(user, payload)
         self.hass.bus.async_fire(
             EVENT_ASSIGNED,
@@ -473,6 +538,7 @@ def _build_metrics(payload: dict[str, Any], user: dict[str, Any]) -> dict[str, A
                 }
             )
         except Exception as err:
+            result["metrics_error"] = str(err)
             _LOGGER.debug("Unable to calculate impedance metrics: %s", err)
     return result
 
@@ -500,6 +566,14 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     async def _async_send_pending_notification(call: ServiceCall) -> None:
         runtime = _runtime_from_call(hass, call)
         await runtime.async_send_pending_notification()
+
+    async def _async_clear_history(call: ServiceCall) -> None:
+        runtime = _runtime_from_call(hass, call)
+        await runtime.async_clear_history(call.data.get(ATTR_USER_NAME))
+
+    async def _async_delete_history_measurement(call: ServiceCall) -> None:
+        runtime = _runtime_from_call(hass, call)
+        await runtime.async_delete_history_measurement(call.data[ATTR_USER_NAME], call.data[ATTR_INDEX])
 
     @callback
     def _async_mobile_action(event: Event) -> None:
@@ -541,6 +615,18 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
         _async_send_pending_notification,
         schema=OPTIONAL_ENTRY_SCHEMA,
     )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_CLEAR_HISTORY,
+        _async_clear_history,
+        schema=CLEAR_HISTORY_SCHEMA,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_DELETE_HISTORY_MEASUREMENT,
+        _async_delete_history_measurement,
+        schema=DELETE_HISTORY_SCHEMA,
+    )
     hass.bus.async_listen("mobile_app_notification_action", _async_mobile_action)
     hass.bus.async_listen("alexa_actionable_notification", _async_alexa_action)
     return True
@@ -571,11 +657,34 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             measurement = parse_service_info(service_info)
         except Exception as err:
+            runtime.last_diagnostic = {
+                "state": "parse_error",
+                "source_address": service_info.address,
+                "rssi": getattr(service_info, "rssi", None),
+                "error": str(err),
+            }
+            async_dispatcher_send(hass, SIGNAL_MEASUREMENT, entry.entry_id)
             _LOGGER.warning("Could not parse Xiaomi scale advertisement: %s", err)
             return
         if measurement is None:
+            runtime.last_diagnostic = {
+                "state": "unsupported_advertisement",
+                "source_address": service_info.address,
+                "rssi": getattr(service_info, "rssi", None),
+            }
+            async_dispatcher_send(hass, SIGNAL_MEASUREMENT, entry.entry_id)
             return
         if not measurement.stabilized:
+            runtime.last_diagnostic = {
+                "state": "not_stabilized",
+                "timestamp": measurement.timestamp,
+                "weight": measurement.weight,
+                "unit": measurement.unit,
+                "impedance": measurement.impedance,
+                "source_address": measurement.source_address,
+                "rssi": measurement.rssi,
+            }
+            async_dispatcher_send(hass, SIGNAL_MEASUREMENT, entry.entry_id)
             _LOGGER.debug("Scale reading seen but not stabilized yet: %.2f %s", measurement.weight, measurement.unit)
             return
         runtime.hass.async_create_task(runtime.async_handle_measurement(measurement))
@@ -604,6 +713,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             bluetooth.BluetoothScanningMode.ACTIVE,
         )
     )
+    runtime.last_diagnostic = {
+        "state": "listening",
+        "mac": runtime.mac,
+    }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))

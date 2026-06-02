@@ -54,6 +54,20 @@ def slug(value: str) -> str:
     return "".join(char.lower() if char.isalnum() else "_" for char in value).strip("_")
 
 
+METRIC_KEYS: frozenset[str] = frozenset({
+    "bmi",
+    "body_fat",
+    "water",
+    "bone_mass",
+    "muscle_mass",
+    "lean_body_mass",
+    "visceral_fat",
+    "basal_metabolism",
+    "protein",
+    "metabolic_age",
+})
+
+
 def same_weight_session(previous: dict[str, Any], current: dict[str, Any]) -> bool:
     prev_w = previous.get("weight")
     curr_w = current.get("weight")

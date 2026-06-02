@@ -12,12 +12,29 @@ from homeassistant.helpers.device_registry import CONNECTION_BLUETOOTH
 
 from .const import DOMAIN, SIGNAL_MEASUREMENT
 
+# (key, label, unit, device_class, icon)
+METRIC_DEFS: list[tuple[str, str, str | None, str | None, str | None]] = [
+    ("bmi",              "BMI",              "kg/m²",              None,                      "mdi:human"),
+    ("body_fat",         "body fat",         "%",                  None,                      "mdi:water-percent"),
+    ("water",            "water",            "%",                  None,                      "mdi:water"),
+    ("muscle_mass",      "muscle mass",      UnitOfMass.KILOGRAMS, SensorDeviceClass.WEIGHT,  None),
+    ("bone_mass",        "bone mass",        UnitOfMass.KILOGRAMS, SensorDeviceClass.WEIGHT,  None),
+    ("lean_body_mass",   "lean body mass",   UnitOfMass.KILOGRAMS, SensorDeviceClass.WEIGHT,  None),
+    ("visceral_fat",     "visceral fat",     None,                 None,                      "mdi:stomach"),
+    ("basal_metabolism", "basal metabolism", "kcal",               None,                      "mdi:fire"),
+    ("protein",          "protein",          "%",                  None,                      "mdi:food-drumstick"),
+    ("metabolic_age",    "metabolic age",    "years",              None,                      "mdi:calendar-clock"),
+]
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     runtime = hass.data[DOMAIN][entry.entry_id]
-    entities: list[SensorEntity] = [
-        XiaomiScaleWeightSensor(runtime, user["NAME"]) for user in runtime.users
-    ]
+    entities: list[SensorEntity] = []
+    for user in runtime.users:
+        user_name = user["NAME"]
+        entities.append(XiaomiScaleWeightSensor(runtime, user_name))
+        for key, label, unit, device_class, icon in METRIC_DEFS:
+            entities.append(XiaomiScaleMetricSensor(runtime, user_name, key, label, unit, device_class, icon))
     entities.append(XiaomiScalePendingSensor(runtime))
     entities.append(XiaomiScaleDiagnosticSensor(runtime))
     entities.append(XiaomiScaleHistorySensor(runtime))
@@ -78,6 +95,34 @@ class XiaomiScaleWeightSensor(XiaomiScaleBaseSensor):
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
         return self.runtime.latest_by_user.get(self.user_name, {})
+
+
+class XiaomiScaleMetricSensor(XiaomiScaleBaseSensor):
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(
+        self,
+        runtime,
+        user_name: str,
+        key: str,
+        label: str,
+        unit: str | None,
+        device_class: str | None,
+        icon: str | None,
+    ) -> None:
+        super().__init__(runtime)
+        self.user_name = user_name
+        self._key = key
+        self._attr_name = f"{user_name} {label}"
+        self._attr_unique_id = f"{runtime.entry.entry_id}_{user_name.lower()}_{key}"
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = device_class
+        if icon:
+            self._attr_icon = icon
+
+    @property
+    def native_value(self) -> float | int | None:
+        return self.runtime.last_metrics_by_user.get(self.user_name, {}).get(self._key)
 
 
 class XiaomiScalePendingSensor(XiaomiScaleBaseSensor):

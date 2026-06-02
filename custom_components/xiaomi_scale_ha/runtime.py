@@ -31,7 +31,7 @@ from .const import (
     SIGNAL_MEASUREMENT,
 )
 from .history import UserHistory
-from .metrics import build_metrics, same_weight_session, slug
+from .metrics import METRIC_KEYS, build_metrics, same_weight_session, slug
 from .parser import ScaleMeasurement
 
 _LOGGER = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ class XiaomiScaleRuntime:
         self.users: list[dict[str, Any]] = entry.options.get(CONF_USERS, entry.data[CONF_USERS])
         self.history = UserHistory(hass, f"{DOMAIN}_{entry.entry_id}_history")
         self.latest_by_user: dict[str, dict[str, Any]] = {}
+        self.last_metrics_by_user: dict[str, dict[str, Any]] = {}
         self.pending: dict[str, Any] | None = None
         self.last_diagnostic: dict[str, Any] = {"state": "starting"}
         self.last_notification: dict[str, Any] = {}
@@ -67,6 +68,9 @@ class XiaomiScaleRuntime:
             latest = self.history.latest_measurement(user_name)
             if latest is not None:
                 self.latest_by_user[user_name] = latest
+                metrics = {k: latest[k] for k in METRIC_KEYS if k in latest}
+                if metrics:
+                    self.last_metrics_by_user[user_name] = metrics
 
     async def async_clear_history(self, user_name: str | None = None) -> None:
         await self.history.async_clear(user_name)
@@ -147,6 +151,10 @@ class XiaomiScaleRuntime:
             raise HomeAssistantError(f"Unknown user: {user_name}")
 
         payload.update(build_metrics(payload, user))
+        new_metrics = {k: payload[k] for k in METRIC_KEYS if k in payload}
+        if new_metrics:
+            existing_metrics = self.last_metrics_by_user.get(user_name, {})
+            self.last_metrics_by_user[user_name] = {**existing_metrics, **new_metrics}
         existing = self.latest_by_user.get(user_name)
         if existing and same_weight_session(existing, payload):
             if existing.get("_finalized"):

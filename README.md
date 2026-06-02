@@ -1,144 +1,254 @@
-[![version](https://img.shields.io/github/v/release/lolouk44/xiaomi_mi_scale)](https://github.com/lolouk44/xiaomi_mi_scale/releases)
-[![docker_badge](https://img.shields.io/docker/pulls/lolouk44/xiaomi-mi-scale)](https://hub.docker.com/r/lolouk44/xiaomi-mi-scale)
-# Xiaomi Mi Scale
+# Xiaomi Scale HA
 
-Code to read weight measurements from Xiaomi Body Scales.
+[![GitHub Release](https://img.shields.io/github/v/release/ermarmon/xiaomi-scale-ha?style=flat-square)](https://github.com/ermarmon/xiaomi-scale-ha/releases)
+[![HACS](https://img.shields.io/badge/HACS-Custom-orange?style=flat-square)](https://github.com/hacs/integration)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](LICENSE)
 
-## BREAKING CHANGE:
-Please note that as off 0.2.0, the config is now located in options.json and no longer in the docker-compose / environment
-Please read on for for more information.
-This change was necessary to allow for unlimited number of users.
+Custom Home Assistant integration for **Xiaomi Mi Body Composition Scales**. Uses the native Home Assistant Bluetooth stack — no MQTT broker, no add-on, no Docker. Works with ESP32 BT proxies.
 
-## Supported Scales:
-Name | Model | Picture
---- | --- | :---:
-[Mi Smart Scale 2](https://www.mi.com/global/scale) &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; | XMTZCO1HM, XMTZC04HM | ![Mi Scale_2](Screenshots/Mi_Smart_Scale_2_Thumb.png)
-[Mi Body Composition Scale](https://www.mi.com/global/mi-body-composition-scale/) | XMTZC02HM | ![Mi Scale](Screenshots/Mi_Body_Composition_Scale_Thumb.png)
-[Mi Body Composition Scale 2](https://c.mi.com/thread-2289389-1-0.html) | XMTZC05HM | ![Mi Body Composition Scale 2](Screenshots/Mi_Body_Composition_Scale_2_Thumb.png)
+---
 
+## Features
 
-## Home Assistant Add-On:
-If using Home Assistant (formerly known as hass.io), try instead the [Xiaomi Mi Scale Add-On for Home Assistant](https://github.com/lolouk44/hassio-addons/tree/master/mi-scale) based on this repository.
+- Auto-detects weight measurements via Bluetooth (BLE passive scan)
+- Assigns measurements to users by weight range (GT/LT)
+- Calculates body metrics: BMI, body fat, water, bone mass, muscle mass, visceral fat, metabolic age, basal metabolism, protein
+- Sends mobile notifications on assignment, with actionable buttons to resolve ambiguous readings
+- Optional Alexa actionable notifications
+- Full measurement history per user
+- Diagnostic sensor with last BLE event and last notification result
+- Compatible with **ESP32 Bluetooth proxies** (no Bluetooth adapter needed on the HA host)
 
-## Getting the Mac Address of your Scale:
+---
 
-1. Retrieve the scale's MAC Address from the Xiaomi Mi Fit App:
+## Supported Scales
 
-![MAC Address](Screenshots/MAC_Address.png)
+| Model | Name |
+|---|---|
+| XMTZCO1HM / XMTZC04HM | Mi Smart Scale 2 |
+| XMTZC02HM | Mi Body Composition Scale |
+| XMTZC05HM | Mi Body Composition Scale 2 |
 
-## Setup & Configuration:
-### Running script with Docker:
+Scales that broadcast on BLE service UUID `0000181b` (v2, with impedance) or `0000181d` (v1, weight only) are supported.
 
-1. Supported platforms:
-	1. linux/386
-	1. linux/amd64
-	1. linux/arm32v6
-	1. linux/arm32v7
-	1. linux/arm64v8
-1. Open `docker-compose.yml` (see below) and edit the environment to suit your configuration...
-1. Stand up the container - `docker-compose up -d`
+---
 
-### docker-compose:
+## Requirements
+
+- Home Assistant 2023.6 or newer
+- Bluetooth integration enabled (built-in) — or at least one **ESP32 Bluetooth proxy** reachable from HA
+- The scale's MAC address (find it in the Xiaomi Health app under device settings)
+
+---
+
+## Installation
+
+### Via HACS (recommended)
+
+1. Open HACS → Integrations
+2. Click the three-dot menu (⋮) → **Custom repositories**
+3. Paste `https://github.com/ermarmon/xiaomi-scale-ha` and select category **Integration**
+4. Click **Add**, then find **Xiaomi Scale HA** in the list and install it
+5. Restart Home Assistant
+
+### Manual
+
+1. Download or clone this repository
+2. Copy the `custom_components/xiaomi_scale_ha` folder into your HA `config/custom_components/` directory
+3. Restart Home Assistant
+
+---
+
+## Configuration
+
+After installation, go to **Settings → Devices & Services → Add Integration** and search for **Xiaomi Scale HA**.
+
+### Step 1 — Basic setup
+
+| Field | Description |
+|---|---|
+| Name | Friendly name for this scale device |
+| MAC Address | BLE MAC address of the scale (e.g. `AA:BB:CC:DD:EE:FF`) |
+| Users (JSON) | List of users — see format below |
+
+### Step 2 — Options (editable after setup)
+
+| Option | Default | Description |
+|---|---|---|
+| Persistent notification on ambiguous reading | On | Creates a HA notification when the weight matches multiple users |
+| Notify on assigned measurement | Off | Sends a mobile push when a reading is successfully assigned |
+| Impedance wait (seconds) | 8 | Seconds to wait for an impedance reading before finalising |
+| Alexa actionable notifications | Off | Send Alexa Yes/No prompts for ambiguous readings |
+
+---
+
+## User configuration (JSON)
+
+Each user is an object in the `USERS` JSON list:
+
+```json
+[
+  {
+    "NAME": "Alice",
+    "GT": 55,
+    "LT": 75,
+    "SEX": "female",
+    "HEIGHT": 165,
+    "DOB": "1990-06-15",
+    "NOTIFY_SERVICE": "notify.mobile_app_alice_phone",
+    "ALEXA_DEVICE": ""
+  },
+  {
+    "NAME": "Bob",
+    "GT": 75,
+    "LT": 100,
+    "SEX": "male",
+    "HEIGHT": 180,
+    "DOB": "1985-03-22",
+    "NOTIFY_SERVICE": "notify.mobile_app_bob_phone",
+    "ALEXA_DEVICE": "media_player.echo_bathroom"
+  }
+]
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `NAME` | Yes | Display name — also used as entity label |
+| `GT` | Yes | Weight greater than this (lower bound, same unit as scale) |
+| `LT` | Yes | Weight less than this (upper bound, same unit as scale) |
+| `SEX` | Yes | `male` or `female` — used for body metric calculations |
+| `HEIGHT` | Yes | Height in cm |
+| `DOB` | Yes | Date of birth in `YYYY-MM-DD` format |
+| `NOTIFY_SERVICE` | No | HA notify service for this user (e.g. `notify.mobile_app_xyz`) |
+| `ALEXA_DEVICE` | No | `media_player` entity ID of the Alexa device to query |
+
+> Weight ranges must not overlap. If two users match the same weight the reading is held as **pending** until confirmed manually or via notification action.
+
+---
+
+## Entities
+
+For each configured user the integration creates:
+
+| Entity | Type | Description |
+|---|---|---|
+| `sensor.<name>_<user>_weight` | Sensor | Latest weight in kg. Attributes contain all metrics |
+
+Plus per-device:
+
+| Entity | Type | Description |
+|---|---|---|
+| `sensor.<name>_pending_measurement` | Sensor | Active when a reading is awaiting assignment. Attributes contain candidates and raw data |
+| `sensor.<name>_last_ble_measurement` | Diagnostic | Last BLE event state and details. Includes `last_notification` result |
+| `sensor.<name>_history` | Diagnostic | Total stored measurements. Attributes contain per-user history |
+
+### Weight sensor attributes
+
+`weight`, `unit`, `bmi`, `body_fat`, `water`, `bone_mass`, `muscle_mass`, `visceral_fat`, `basal_metabolism`, `lean_body_mass`, `protein`, `metabolic_age`, `impedance`, `timestamp`, `rssi`
+
+---
+
+## Services
+
+| Service | Parameters | Description |
+|---|---|---|
+| `xiaomi_scale_ha.assign_pending` | `user_name` | Assign the pending reading to a user |
+| `xiaomi_scale_ha.discard_pending` | — | Discard the pending reading |
+| `xiaomi_scale_ha.send_pending_notification` | — | Re-send the pending notification |
+| `xiaomi_scale_ha.clear_history` | `user_name` (optional) | Clear stored history for one or all users |
+| `xiaomi_scale_ha.delete_history_measurement` | `user_name`, `index` | Delete a specific history entry |
+
+---
+
+## Notifications
+
+### Mobile push — assigned reading
+
+Enable **Notify on assigned measurement** in options and set `NOTIFY_SERVICE` per user. When a reading is assigned you receive:
+
+> **Peso registrado**  
+> Alice: 62.3 kg (BMI 22.9, grasa 24.1%)
+
+### Mobile push — ambiguous reading
+
+When a weight matches more than one user, each candidate's `NOTIFY_SERVICE` receives an actionable notification with buttons:
+
+> **Pesaje sin asignar**  
+> Pesaje sin asignar: 68.5 kg. Candidatos: Alice, Bob.  
+> [Soy Alice] [Soy Bob] [Descartar]
+
+Tapping a button fires a `mobile_app_notification_action` event which the integration handles automatically.
+
+### Alexa actionable notifications
+
+Enable **Alexa actionable notifications** in options and fill in `ALEXA_DEVICE` per user. Requires the [Alexa Media Player](https://github.com/custom-components/alexa_media_player) integration and a helper script that calls `alexa_media_player.play_media`.
+
+---
+
+## Diagnostic sensor
+
+The `last BLE measurement` sensor (visible under **Diagnostic** in the device page) exposes the full state of the last processing cycle. Check its attributes after a weigh-in to understand exactly what happened.
+
+| `state` value | Meaning |
+|---|---|
+| `listening` | Integration started, waiting for BLE advertisements |
+| `not_stabilized` | Scale is still settling — reading in progress |
+| `measurement_received` | Valid stabilised reading received |
+| `assigned` | Reading matched exactly one user |
+| `pending` | Reading matched multiple users, waiting for confirmation |
+| `no_user_matched` | Weight outside all configured GT/LT ranges |
+| `parse_error` | Could not parse the BLE advertisement |
+| `unsupported_advertisement` | BLE packet from the scale MAC but not a scale payload |
+
+The `last_notification` attribute shows the outcome of the last notification attempt:
+
+| `result` value | Meaning |
+|---|---|
+| `sent` | Notification dispatched successfully |
+| `skipped` | Not sent — see `reason` (`notify_assigned_disabled`, `no_notify_service`, `already_finalized`) |
+| `error` | Service call failed — see `error` field |
+
+---
+
+## Troubleshooting
+
+**No readings are received at all**
+- Confirm the MAC address matches exactly (use the Xiaomi Health app → device info)
+- Check that Bluetooth is working in HA: Settings → System → Hardware → Bluetooth
+- Step on the scale and wait ~10 s, then reload the page — `last BLE measurement` state should change from `listening`
+
+**Weight is received but not assigned to any user**
+- State will be `no_user_matched`. Check that the measured weight (shown in attributes) falls within a user's `GT`/`LT` range and that units match the scale setting
+
+**Notification not received after an assigned reading**
+- Check `last_notification` in the diagnostic sensor attributes
+- `notify_assigned_disabled` → enable the option in integration settings
+- `no_notify_service` → add `NOTIFY_SERVICE` to the user JSON
+- `already_finalized` → same-weight session was merged with a previous reading (step on scale twice with the same weight in <30 s)
+- `error` → the notify service call failed; check the HA logs for details
+
+**Logs**
+
+Enable debug logging for detailed output:
+
 ```yaml
-version: '3'
-services:
-
-  mi-scale:
-    image: lolouk44/xiaomi-mi-scale:latest
-    container_name: mi-scale
-    restart: always
-
-    network_mode: host
-    privileged: true
-    volumes:
-      - ./data:/data
-      - /var/run/dbus/:/var/run/dbus/:ro #needed for bleak
-```
-### options.json:
-All the config needs to be in a file named `options.json`. You can get a copy of one with minimum config [here](./options.json)
-
-List of options
-
-Option | Type | Required | Description
---- | --- | --- | ---
-MISCALE_MAC | string | Yes | Mac address of your scale
-MQTT_HOST | string | Yes | MQTT Server (defaults to 127.0.0.1)
-HCI_DEV | string | No | Bluetooth hci device to use. Defaults to hci0
-MQTT_PREFIX | string | No | MQTT Topic Prefix. Defaults to miscale
-MQTT_USERNAME | string | No | Username for MQTT server (comment out if not required)
-MQTT_PASSWORD | string | No | Password for MQTT (comment out if not required)
-MQTT_PORT | int | No | Defaults to 1883
-MQTT_DISCOVERY | bool | No | MQTT Discovery for Home Assistant Defaults to true
-MQTT_DISCOVERY_PREFIX | string | No | MQTT Discovery Prefix for Home Assistant. Defaults to homeassistant
-MQTT_TLS_CACERTS | string | No | MQTT TLS connection: directory with CA certificate(s) that signed MQTT Server's TLS certificate, defaults to None (= no TLS connection)
-MQTT_TLS_INSECURE | bool | No | MQTT TLS connection: don't verify hostname in TLS certificate, defaults to None (= always check hostname)
-BLUEPY_PASSIVE_SCAN | bool | No | Try to set to true if getting an error like `Bluetooth connection error: Failed to execute management command ‘le on’` on a Raspberry Pi. Defaults to false
-DEBUG_LEVEL | string | No | Logging level. Possible values: 'CRITICAL', 'ERROR', 'WARNING', 'INFO', 'DEBUG'. Defaults to 'INFO'.
-USERS | List | Yes | List of users to add
-
-Auto-gender selection/config -- This is used to create the calculations such as BMI, Water/Bone Mass etc...
-Here is the logic used to assign a measured weight to a user:
-- If the weight is within the range of a user's defined values for GT and LT, then it will be assigned (published) to that user.
-- If the weight matches two separate user ranges, it will only be assigned to the first user that matched (so don't overlap ranges!)
-
-User Option | Type | Required | Description
---- | --- | --- | ---
-GT | int | Yes | Greater Than - Weight must be greater than this value - this will be the lower limit for the weight range of this user
-LT | int | Yes | Less Than - Weight must be less than this value - this will be the upper limit for the weight range of this user
-SEX | string | Yes | male / female
-NAME | string | Yes | Name of the user
-HEIGHT | int | Yes | Height (in cm) of the user
-DOB | string | Yes | DOB (in yyyy-mm-dd format)
-
-Note: The weight definitions must be in the same unit as the scale (kg, Lbs, jin)
-
-### Running script directly on your host system:
-
-***Note: Python 3.6 or higher is required to run the script manually***
-
-***Note: this is now deprecated. It would still work provided the path to options.json is manually set in the code manually set path at line 39: `with open('/data/options.json') as json_file`***
-
-1. Install python requirements (pip3 install -r requirements.txt)
-1. Open `wrapper.sh` and configure your environment variables to suit your setup.
-1. Add a cron-tab entry to wrapper like so:
-
-```sh
-@reboot bash /path/to/wrapper.sh
+# configuration.yaml
+logger:
+  default: warning
+  logs:
+    custom_components.xiaomi_scale_ha: debug
 ```
 
-**NOTE**: Although once started the script runs continuously, it may take a few seconds for the data to be retrieved, computed and sent via mqtt.
+---
 
-## Home-Assistant Setup:
-Under the `sensor` block, enter as many blocks as users configured in your environment variables.
+## Credits
 
-```yaml
-mqtt:
-  sensor:
-    - name: "Example Name Weight"
-      state_topic: "miscale/USER_NAME/weight"
-      value_template: "{{ value_json['weight'] }}"
-      unit_of_measurement: "kg"
-      json_attributes_topic: "miscale/USER_NAME/weight"
-      icon: mdi:scale-bathroom
-      # Below lines only needed if long term statistics are required
-      state_class: "measurement"
+Body metric calculations adapted from the work of [@wiecosystem](https://github.com/wiecosystem/Bluetooth) and [@syssi](https://gist.github.com/syssi/4108a54877406dc231d95514e538bde9).
 
-    - name: "Example Name BMI"
-      state_topic: "miscale/USER_NAME/weight"
-      value_template: "{{ value_json['bmi'] }}"
-      icon: mdi:human-pregnant
-      unit_of_measurement: "kg/m2"
-      # Below lines only needed if long term statistics are required
-     state_class: "measurement"
-```
+Original scale decoder based on [xiaomi_mi_scale](https://github.com/lolouk44/xiaomi_mi_scale) by [@lolouk44](https://github.com/lolouk44).
 
-![Mi Scale](Screenshots/HA_Lovelace_Card.png)
+---
 
-![Mi Scale](Screenshots/HA_Lovelace_Card_Details.png)
+## License
 
-## Acknowledgements:
-Thanks to @syssi (https://gist.github.com/syssi/4108a54877406dc231d95514e538bde9) and @prototux (https://github.com/wiecosystem/Bluetooth) for their initial code
-
-Special thanks to [@ned-kelly](https://github.com/ned-kelly) for his help turning a "simple" python script into a fully fledged docker container
-
-Thanks to [@bpaulin](https://github.com/bpaulin), [@AiiR42](https://github.com/AiiR42), [@andreasbrett](https://github.com/andreasbrett) for their PRs and collaboration
+MIT

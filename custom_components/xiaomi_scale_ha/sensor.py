@@ -112,7 +112,10 @@ class XiaomiScaleDiagnosticSensor(XiaomiScaleBaseSensor):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return self.runtime.last_diagnostic
+        attrs = dict(self.runtime.last_diagnostic)
+        if self.runtime.last_notification:
+            attrs["last_notification"] = self.runtime.last_notification
+        return attrs
 
 
 class XiaomiScaleHistorySensor(XiaomiScaleBaseSensor):

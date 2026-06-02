@@ -12,10 +12,10 @@
       "connectable": false
     }
   ],
-  "codeowners": [],
+  "codeowners": ["@ermarmon"],
   "config_flow": true,
   "dependencies": ["bluetooth", "bluetooth_adapters"],
-  "documentation": "https://github.com/lolouk44/xiaomi_mi_scale",
+  "documentation": "https://github.com/ermarmon/xiaomi-scale-ha",
   "iot_class": "local_push",
-  "version": "0.1.0"
+  "version": "0.1.1"
 }

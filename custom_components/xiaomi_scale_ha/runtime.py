@@ -48,6 +48,7 @@ class XiaomiScaleRuntime:
         self.latest_by_user: dict[str, dict[str, Any]] = {}
         self.pending: dict[str, Any] | None = None
         self.last_diagnostic: dict[str, Any] = {"state": "starting"}
+        self.last_notification: dict[str, Any] = {}
         self._action_to_user: dict[str, str | None] = {}
         self._alexa_event_to_user: dict[str, str] = {}
         self._last_signature: tuple[float, int | None] | None = None
@@ -193,6 +194,16 @@ class XiaomiScaleRuntime:
     async def _finalize_assigned_measurement(self, user: dict[str, Any], payload: dict[str, Any]) -> None:
         user_name = user["NAME"]
         if payload.get("_finalized"):
+            _LOGGER.info(
+                "Skipping duplicate finalization for %s: same-session weight already finalized",
+                user_name,
+            )
+            self.last_notification = {
+                "result": "skipped",
+                "reason": "already_finalized",
+                "user_name": user_name,
+                "timestamp": payload.get("timestamp"),
+            }
             async_dispatcher_send(self.hass, SIGNAL_MEASUREMENT, self.entry.entry_id)
             return
         payload["_finalized"] = True
@@ -349,12 +360,32 @@ class XiaomiScaleRuntime:
         return result
 
     async def _send_assigned_notification(self, user: dict[str, Any], payload: dict[str, Any]) -> None:
+        user_name = user["NAME"]
         if not self.entry.options.get(CONF_NOTIFY_ASSIGNED, False):
+            _LOGGER.debug(
+                "Assigned notification skipped for %s: notify_assigned is disabled in options",
+                user_name,
+            )
+            self.last_notification = {
+                "result": "skipped",
+                "reason": "notify_assigned_disabled",
+                "user_name": user_name,
+                "timestamp": payload.get("timestamp"),
+            }
             return
         notify_service = self._notify_service_for_user(user)
         if not notify_service:
+            _LOGGER.warning(
+                "Assigned notification skipped for %s: no notify_service configured for this user",
+                user_name,
+            )
+            self.last_notification = {
+                "result": "skipped",
+                "reason": "no_notify_service",
+                "user_name": user_name,
+                "timestamp": payload.get("timestamp"),
+            }
             return
-        user_name = user["NAME"]
         weight = payload["weight"]
         unit = payload["unit"]
         message = f"{user_name}: {weight} {unit}"
@@ -365,6 +396,16 @@ class XiaomiScaleRuntime:
             details.append(f"grasa {body_fat}%")
         if details:
             message = f"{message} ({', '.join(details)})"
+        _LOGGER.info(
+            "Sending assigned notification for %s via %s: %s", user_name, notify_service, message
+        )
+        self.last_notification = {
+            "result": "sent",
+            "user_name": user_name,
+            "service": notify_service,
+            "message": message,
+            "timestamp": payload.get("timestamp"),
+        }
         await self._send_mobile_notification(
             notify_service,
             "Peso registrado",
@@ -382,11 +423,16 @@ class XiaomiScaleRuntime:
         if domain != "notify":
             _LOGGER.warning("Notify service must start with notify.: %s", notify_service)
             return
-        await self.hass.services.async_call(
-            domain, service,
-            {"title": title, "message": message, "data": data or {}},
-            blocking=False,
-        )
+        try:
+            await self.hass.services.async_call(
+                domain, service,
+                {"title": title, "message": message, "data": data or {}},
+                blocking=True,
+            )
+        except Exception as err:
+            _LOGGER.error("Failed to send notification via %s: %s", notify_service, err)
+            if self.last_notification.get("result") == "sent":
+                self.last_notification.update({"result": "error", "error": str(err)})
 
     async def _send_pending_mobile_notification(self, notify_service: str, message: str) -> None:
         candidates = self.pending.get("candidates", []) if self.pending else []

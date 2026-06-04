@@ -92,7 +92,7 @@ class UserHistory:
                 last_weights = [float(item["weight"]) for item in history[-10:] if "weight" in item]
                 if last_weights and abs(mean(last_weights) - weight) <= tolerance_kg:
                     candidates.append(name)
-                continue
+                    continue
             gt = user.get("GT")
             lt = user.get("LT")
             if isinstance(gt, (int, float)) and isinstance(lt, (int, float)) and gt < weight < lt:

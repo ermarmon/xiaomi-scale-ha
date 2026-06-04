@@ -127,6 +127,16 @@ class XiaomiScaleRuntime:
             await self.async_set_pending({**payload, "candidates": candidates})
             return
 
+        all_users = [u.get("NAME") for u in self.users if isinstance(u.get("NAME"), str)]
+        if all_users:
+            _LOGGER.info(
+                "No user matched %.2f %s — sending pending notification to all %d user(s)",
+                measurement.weight, measurement.unit, len(all_users),
+            )
+            self.last_diagnostic["state"] = "pending"
+            self.last_diagnostic["candidates"] = all_users
+            await self.async_set_pending({**payload, "candidates": all_users})
+            return
         self.last_diagnostic["state"] = "no_user_matched"
         async_dispatcher_send(self.hass, SIGNAL_MEASUREMENT, self.entry.entry_id)
         _LOGGER.info("No configured user matched %.2f %s", measurement.weight, measurement.unit)
